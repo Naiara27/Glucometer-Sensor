@@ -1,0 +1,132 @@
+
+//–––– GLUCOMETER SENSOR ––––//
+//Microcontroller Systems Final Project//
+
+//This is the code we are using to measure the current from the reactive probe and calibrating it to obtain a measurable blood glucose value.
+//We are compiling and trying this code on the 5th of May.
+#include <Wire.h>
+#include <U8g2lib.h>
+
+#define SENSOR A0
+
+U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+
+// Calibration:
+// We will use the following expression to obtain glucose levels out of voltage values:
+//glucose = voltage_mV * SLOPE + OFFSET, as the measured voltage and blood glucose values follow an almost-linear relationship.
+
+//These are two reference points
+float V1 = 350.0; //mV low 
+float G1 = 70.0; //mg/dL low
+
+float V2 = 900.0; //mV high
+float G2 = 180.0; //mg/dL high
+
+float SLOPE;
+float OFFSET;
+
+float readVoltage_mV(byte samples) {
+  long sum = 0;
+
+  for (byte i = 0; i < samples; i++) {
+    sum += analogRead(SENSOR);
+    delay(5);
+  }
+
+  float raw = sum / (float)samples;
+  return raw * (1100.0 / 1023.0); //we are going to work with 1.1V because Arduino Nano uses this internal reference voltage.
+}
+
+float voltageToGlucose(float voltage_mV) {
+  return voltage_mV * SLOPE + OFFSET;
+}
+
+const char* classify(float g) {
+  if (g < 70) return "LOW";
+  if (g < 100) return "NORMAL";
+  if (g < 200) return "ELEVATED";
+  return "HIGH";
+}
+
+//This code is for the interface and visualization in the OLED display screen.
+void drawText(const char* l1, const char* l2) {
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x10_tr);
+    u8g2.drawStr(0, 16, l1);
+    u8g2.drawStr(0, 34, l2);
+  } while (u8g2.nextPage());
+}
+
+void drawResult(float glucose, float voltage_mV) {
+  char gtxt[10];
+  char vtxt[12];
+
+  dtostrf(glucose, 5, 1, gtxt);
+  dtostrf(voltage_mV, 6, 1, vtxt);
+
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x10_tr);
+    u8g2.drawStr(0, 10, "GLUCOSE");
+
+    u8g2.setFont(u8g2_font_10x20_tr);
+    u8g2.drawStr(0, 34, gtxt);
+
+    u8g2.setFont(u8g2_font_6x10_tr);
+    u8g2.drawStr(70, 34, "mg/dL");
+
+    u8g2.drawStr(0, 50, "mV:");
+    u8g2.drawStr(38, 50, vtxt);
+
+    u8g2.drawStr(0, 63, classify(glucose));
+  } while (u8g2.nextPage());
+}
+
+void setup() {
+  Serial.begin(9600);
+
+  analogReference(INTERNAL); //the analog reference is about 1.1V. We will use this because our sensor is in millivolt range. We know this because 
+//we used a multimeter and we obtained a voltage of 2.5V.
+  u8g2.begin();
+  //These lines do linear calibration
+  SLOPE = (G2 - G1) / (V2 - V1);
+  OFFSET = G1 - (SLOPE * V1);
+
+  //Starting the serial monitor
+  Serial.println("Serial monitor ready");
+
+  drawText("Glucometer ready","");
+}
+
+//Reading voltage and calibrating those values to convert them to readable glucose levels
+void loop() {
+
+  drawText("Measuring...", "");
+  delay(500);
+
+//These lines help us debug the code and see if the raw values are maxed out and if there is a connection issue.
+//If Raw ADC: 1023, the input is saturated. If we see random values jumping around, the input is floating.
+//We want the raw ADC to have stable values.
+  int raw_debug = analogRead(SENSOR);
+  Serial.print("Raw ADC: ");
+  Serial.println(raw_debug);
+
+  float voltage_mV = readVoltage_mV(32);
+  float glucose = voltageToGlucose(voltage_mV);
+
+  // glucose = constrain(glucose, 0, 500); (commented out line to debug)
+
+//Printing voltage and glucose levels on serial monitor
+  Serial.print("Voltage: ");
+  Serial.print(voltage_mV, 1);
+  Serial.print(" mV | Glucose: ");
+  Serial.print(glucose, 1);
+  Serial.println(" mg/dL");
+
+  drawResult(glucose, voltage_mV);
+
+  delay(3000);
+
+  drawText("Glucometer ready", "");
+}
