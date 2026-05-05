@@ -1,0 +1,2 @@
+These steps are thought to make the glucometer function properly, but the chosen op amp (LM741) is difficulting the task. 
+We recommend using a model such as MCP6002. The op amp must behave as a transimpedance amplifier (TIA). 
